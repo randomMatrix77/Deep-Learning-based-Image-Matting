@@ -8,6 +8,7 @@ os.environ['TORCH_HOME'] = "D:/Softwares/miniconda/torch_models"
 print('current location : {}'.format(os.getenv("TORCH_HOME",os.path.join(os.getenv('XDG_CACHE_HOME', '~/.cache'),
                                                                          'torch'))))
 
+print('Loading Model')
 # depth perception model MiDaS by intel
 depth_model = torch.hub.load("intel-isl/MiDaS", "MiDaS")
 
@@ -17,38 +18,66 @@ midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
 
 transforms = midas_transforms.default_transform
 
-img = cv2.imread("D:\Personal\mohsinnnnn\imp stuff\Snow\IMG_20161108_124416.jpg")
-img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-inp = transforms(img)
-out = depth_model(inp)
-
-# Resize output to original (image) size
-out = torch.nn.functional.interpolate(out.unsqueeze(1), size=img.shape[:2],
-                                    mode="bicubic", align_corners=False).squeeze()
-out = out.detach().numpy()
-
-plt.imshow(out)
-
-# image matting part
-
 face_cascade = cv2.CascadeClassifier('haar_face.xml')
 
-# detect face in the image
-bw = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-faces = face_cascade.detectMultiScale(bw)
 
-for (x, y, w, h) in faces:
-     f = out[x : x+h, y : y+h]
+def bokeh_filter(path_of_image, blur_kernel_size):
 
-avg = np.average(np.average(f, axis = 0))
+    print('Reading image file')
 
-# Foreground & Background extraction
-fg = (out > avg)
-bg = 1 - fg
+    if os.path.isfile(path_of_image):
+        img = cv2.imread(path_of_image)
+    else:
+        print('Invalid file')
+        return 0
 
-fg_im = img * fg[:,:,np.newaxis]    # foreground image of shape (x, y, 3)
+    bw = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-blur = img*bg[:, :, np.newaxis]
-blur = cv2.GaussianBlur(blur, (13, 13), 0)
+    inp = transforms(img)
+    out = depth_model(inp)
+    out = out / out.max()
+    print('Generated depth map')
 
-bokeah = blur + fg_im
+    bw = cv2.resize(bw, (inp.shape[3], inp.shape[2]))
+
+    print('Detecting faces in image')
+    faces = face_cascade.detectMultiScale(bw)
+    avg = []
+
+    try:
+        for (x, y, w, h) in faces:
+            temp = out[0, y:y+h, x:x+h]
+            temp = temp.detach().numpy()
+            temp_avg = np.average(np.average(temp, axis = 0))
+            avg.append(temp_avg)
+
+        avg = np.array(avg)
+
+        clipping_threshold = avg.min()
+
+        print('Face detected. Using {} as clipping value'.format(clipping_threshold))
+
+        # Resize output to original (image) size
+        out = torch.nn.functional.interpolate(out.unsqueeze(1), size=img.shape[:2],
+                                            mode="bicubic", align_corners=False).squeeze()
+        out = out.detach().numpy()
+
+        print('Extracting bg and fg.')
+        # Foreground & Background extraction
+        fg = (out > clipping_threshold)
+        bg = 1 - fg
+
+        fg_im = img * fg[:,:,np.newaxis]    # foreground image of shape (x, y, 3)
+
+        print('Applying Gaussian Blur')
+        blur = cv2.GaussianBlur(img, (blur_kernel_size, blur_kernel_size), 0)
+        blur = blur*bg[:, :, np.newaxis]
+
+        bokeh = blur + fg_im
+
+        return bokeh
+
+    except:
+        print('No faces found. Bokeh filter works only if faces are detected.')
+        return 0
