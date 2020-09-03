@@ -1,1 +1,3 @@
 # Deep-Learning-based-Image-Matting
+
+The script 'depth model' can create bokeh (portrait mode) like effect on images. This script uses depth perception to separate the foreground and background. Instead of setting an arbitirary threshold value for depth perception (in the generated depth map, everything beyond a threshold value is considered as background), the threshold is set by detecting faces of the subject/s present in the image. The apparent depth of subject from the depth map is used as a the threshold. Depth maps are generated using pretrained MiDaS model and face recognition is performed using 'Face Haar Cascade' in OpenCV.
